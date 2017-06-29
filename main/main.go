@@ -17,10 +17,13 @@ import (
 
 const (
 
-	fps = 60
+	fps = 120
+	use_vsync = true
 )
 
 var (
+	has_vsync_extension = false
+
 	triangle = []float32{
 		0.5, 1,
 		0, 0,
@@ -110,9 +113,14 @@ func main() {
 		currentTime := time.Now()
 		deltaTime := time.Since(lastTime)
 
-		drawingTime := deltaTime - sleptTime
-		time.Sleep((time.Second / fps) - drawingTime)
-		sleptTime = (time.Second / fps) - drawingTime
+		fmt.Println(deltaTime)
+
+		if !use_vsync || !has_vsync_extension {
+
+			drawingTime := deltaTime - sleptTime
+			time.Sleep((time.Second / fps) - drawingTime)
+			sleptTime = (time.Second / fps) - drawingTime
+		}
 
 		lastTime = currentTime
 
@@ -193,7 +201,14 @@ func createWindow(width, height int) *glfw.Window {
 		panic(err)
 	}
 	window.MakeContextCurrent()
-	glfw.SwapInterval(60)
+
+	has_vsync_extension = glfw.ExtensionSupported("WGL_EXT_swap_control_tear") || glfw.ExtensionSupported("GLX_EXT_swap_control_tear")
+
+	if use_vsync && has_vsync_extension {
+		glfw.SwapInterval(1)
+	} else {
+		glfw.SwapInterval(0)
+	}
 
 	return window
 }
