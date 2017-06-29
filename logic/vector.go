@@ -1,4 +1,4 @@
-package calc
+package logic
 
 import "math"
 
@@ -26,6 +26,15 @@ func (vec *Vector2f) Dot(in *Vector2f) float32 {
 	return vec.X * in.X + vec.Y * in.Y
 }
 
+func (vec *Vector2f) Vector3f(z float32) *Vector3f {
+
+	return &Vector3f{vec.X, vec.Y, z}
+}
+
+func (vec *Vector2f) Vector4f(z, w float32) *Vector4f {
+
+	return &Vector4f{vec.X, vec.Y, z, w}
+}
 //Vector3f
 
 type Vector3f struct {
@@ -60,9 +69,9 @@ func (vec *Vector3f) Cross(in *Vector3f) *Vector3f {
 	return &Vector3f{x, y, z}
 }
 
-func (vec *Vector3f) Vector4f() *Vector4f {
+func (vec *Vector3f) Vector4f(w float32) *Vector4f {
 
-	return &Vector4f{vec.X, vec.Y, vec.Z, 1.0}
+	return &Vector4f{vec.X, vec.Y, vec.Z, w}
 }
 
 //Vector4f
