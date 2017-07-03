@@ -3,7 +3,6 @@ package main
 import (
 	"github.com/go-gl/gl/v3.3-core/gl"
 	"github.com/go-gl/glfw/v3.2/glfw"
-	"log"
 	"os"
 	"fmt"
 	"bytes"
@@ -11,25 +10,19 @@ import (
 	"runtime"
 	"github.com/schottm/gllib/logic"
 	"math"
-	"time"
 	"github.com/schottm/gllib/gui"
-)
-
-const (
-
-	fps = 120
-	use_vsync = true
+	"github.com/schottm/gllib"
+	"sync"
 )
 
 var (
-	has_vsync_extension = false
-
 	triangle = []float32{
-		0.5, 1,
 		0, 0,
-		1, 0}
+		1, 0,
+		0.5, 1}
 	translU int32
 	colourU int32
+	prog uint32
 	vao uint32
 )
 
@@ -40,7 +33,9 @@ type TestPanel struct {
 	tick int64
 }
 
-func (tp *TestPanel) Draw(timeDelta int64) {
+func (tp *TestPanel) Draw(transform *logic.Matrix4f, timeDelta int64) {
+
+	gl.UseProgram(prog)
 
 	tp.tick += timeDelta
 
@@ -52,13 +47,13 @@ func (tp *TestPanel) Draw(timeDelta int64) {
 	scale := logic.NewScaleMatrix4f(current, current, 1, 1)
 	mat = mat.Mul(scale)
 
-
 	gl.BindVertexArray(vao)
-	gl.UniformMatrix4fv(translU, 1, false, &tp.GetTransform().Mul(mat).M00)
+	gl.UniformMatrix4fv(translU, 1, false, &transform.Mul(mat).M00)
 	gl.Uniform3f(colourU,
 		0.5 + float32(math.Sin(x) / 2),
 		0.5 + float32(math.Sin(x + math.Pi * 2 / 3) / 2),
 		0.5 + float32(math.Sin(x + math.Pi * 4 / 3) / 2))
+	//gl.Uniform3f(colourU, 1, 1, 1)
 
 	gl.DrawArrays(gl.TRIANGLES, 0, int32(len(triangle))/2)
 }
@@ -67,91 +62,55 @@ func main() {
 
 	runtime.LockOSThread()
 
-	window := createWindow(500, 500)
 	defer glfw.Terminate()
-	defer window.Destroy()
 
-	initOpenGL()
+	var display = gllib.NewDisplay(500, 500, "gllib", true, gllib.USE_VSYNC)
+	defer display.Destroy()
 
-	prog := createProgram()
+	prog = createProgram()
 	translU = gl.GetUniformLocation(prog,  gl.Str("transform" + "\x00"))
 	colourU = gl.GetUniformLocation(prog,  gl.Str("colour" + "\x00"))
 	defer gl.DeleteProgram(prog)
 
 	vao, _ = createVAO(triangle)
 
-	width, height := window.GetSize()
-
-	//Initialize Component
-	var context = &gui.ContentPane{}
-	context.SetSize(&logic.Vector2f{1, 1})
+	var pane gui.Container = &gui.ContentPane{}
+	pane.SetSize(&logic.Vector2f{1, 1})
 
 	var layout = gui.NewDefaultLayout()
-	context.SetLayout(layout)
+	pane.SetLayout(layout)
 
 	var a gui.Component = &TestPanel{}
 	a.SetSize(&logic.Vector2f{0.5, 0.5})
-	context.Add(a)
+	pane.Add(a)
 	layout.AddComponent(a, &logic.Vector2f{0,0})
 
 	var b gui.Component = &TestPanel{}
 	b.SetSize(&logic.Vector2f{0.5, 0.5})
-	context.Add(b)
-	layout.AddComponent(b, &logic.Vector2f{0.25, 0.5})
+	pane.Add(b)
+	layout.AddComponent(b, &logic.Vector2f{0.5, 0})
 
 	var c gui.Component = &TestPanel{}
 	c.SetSize(&logic.Vector2f{0.5, 0.5})
-	context.Add(c)
-	layout.AddComponent(c, &logic.Vector2f{0.5, 0})
+	pane.Add(c)
+	layout.AddComponent(c, &logic.Vector2f{0.25, 0.5})
 
-	var lastTime = time.Now()
-	var sleptTime time.Duration = 0
+	var context gllib.Context = gllib.NewUIOverlay(pane, gllib.OPENGL_ALIGNMENT)
 
-	for !window.ShouldClose() {
+	display.AddContext(context)
 
-		//calculate delta time
-		currentTime := time.Now()
-		deltaTime := time.Since(lastTime)
+	var mutex = sync.Mutex{}
 
-		fmt.Println(deltaTime)
+	for !display.ShouldClose() {
 
-		if !use_vsync || !has_vsync_extension {
+		//add regular update thread management with mutex
 
-			drawingTime := deltaTime - sleptTime
-			time.Sleep((time.Second / fps) - drawingTime)
-			sleptTime = (time.Second / fps) - drawingTime
-		}
-
-		lastTime = currentTime
-
-		//check window resize
-		cwidth, cheight := window.GetSize()
-		if cwidth != width || cheight != height {
-			width = cwidth
-			height = cheight
-			gl.Viewport(0, 0, int32(width), int32(height))
-		}
-
-		//clear frame buffer
-		gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
-		//use default shader
-		gl.UseProgram(prog)
-
-		context.Draw(int64(deltaTime))
-
+		mutex.Lock()
 		glfw.PollEvents()
 
-		window.SwapBuffers()
+		display.Update()
+		mutex.Unlock()
 	}
-}
-
-func initOpenGL() {
-
-	if err := gl.Init(); err != nil {
-		panic(err)
-	}
-	version := gl.GoStr(gl.GetString(gl.VERSION))
-	log.Println("OpenGL version", version)
 }
 
 func createProgram() uint32 {
@@ -173,44 +132,6 @@ func createProgram() uint32 {
 	gl.LinkProgram(prog)
 
 	return prog
-}
-
-func createWindow(width, height int) *glfw.Window {
-	if err := glfw.Init(); err != nil {
-		panic(err)
-	}
-	glfw.WindowHint(glfw.ContextVersionMajor, 3)
-	glfw.WindowHint(glfw.ContextVersionMinor, 3)
-	//glfw.WindowHint(glfw.Resizable, glfw.False)
-	glfw.WindowHint(glfw.OpenGLProfile, glfw.OpenGLCoreProfile)
-	glfw.WindowHint(glfw.OpenGLForwardCompatible, glfw.True)
-
-	window, err := glfw.CreateWindow(width, height, "gllib", nil, nil)
-
-
-	window.SetSizeLimits(width, height, glfw.GetPrimaryMonitor().GetVideoMode().Width, glfw.GetPrimaryMonitor().GetVideoMode().Height)
-	window.SetAspectRatio(1, 1)
-	//set the window centered
-	var x, y = window.GetSize()
-	x = glfw.GetPrimaryMonitor().GetVideoMode().Width - x
-	y = glfw.GetPrimaryMonitor().GetVideoMode().Height - y
-
-	window.SetPos(x / 2, y / 2)
-
-	if err != nil {
-		panic(err)
-	}
-	window.MakeContextCurrent()
-
-	has_vsync_extension = glfw.ExtensionSupported("WGL_EXT_swap_control_tear") || glfw.ExtensionSupported("GLX_EXT_swap_control_tear")
-
-	if use_vsync && has_vsync_extension {
-		glfw.SwapInterval(1)
-	} else {
-		glfw.SwapInterval(0)
-	}
-
-	return window
 }
 
 func compileShader(source string, shaderType uint32) (uint32, error) {
